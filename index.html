@@ -33,6 +33,14 @@
             </svg>
         );
 
+        const Upload = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+        );
+
         const Plus = ({ className }) => (
             <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -67,9 +75,22 @@
             </svg>
         );
 
+        const FileText = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+        );
+
         function AcademicCalendar() {
             const [events, setEvents] = useState([]);
             const [showForm, setShowForm] = useState(false);
+            const [showImport, setShowImport] = useState(false);
+            const [extractedEvents, setExtractedEvents] = useState([]);
+            const [syllabusText, setSyllabusText] = useState('');
             const [formData, setFormData] = useState({
                 type: 'class',
                 title: '',
@@ -86,6 +107,127 @@
                 class: { label: 'Class', color: 'bg-blue-500', icon: BookOpen },
                 homework: { label: 'Homework Due', color: 'bg-orange-500', icon: Clock },
                 important: { label: 'Important Date', color: 'bg-purple-500', icon: Star }
+            };
+
+            // Parse syllabus text
+            const parseSyllabus = (text) => {
+                const parsed = [];
+                const lines = text.split('\n');
+                
+                // Common date patterns
+                const datePatterns = [
+                    /(\d{1,2}\/\d{1,2}\/\d{2,4})/g,
+                    /(\d{1,2}-\d{1,2}-\d{2,4})/g,
+                    /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/gi,
+                    /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}/gi
+                ];
+
+                // Keywords for event types
+                const homeworkKeywords = ['homework', 'assignment', 'due', 'submit', 'essay', 'paper', 'project'];
+                const examKeywords = ['exam', 'test', 'quiz', 'midterm', 'final'];
+                const classKeywords = ['lecture', 'class', 'session', 'meeting'];
+
+                lines.forEach((line, idx) => {
+                    // Try to find dates in the line
+                    let foundDate = null;
+                    let dateStr = null;
+
+                    for (let pattern of datePatterns) {
+                        const matches = line.match(pattern);
+                        if (matches && matches[0]) {
+                            dateStr = matches[0];
+                            foundDate = parseDate(dateStr);
+                            break;
+                        }
+                    }
+
+                    if (foundDate) {
+                        // Determine event type
+                        let type = 'important';
+                        const lowerLine = line.toLowerCase();
+                        
+                        if (homeworkKeywords.some(kw => lowerLine.includes(kw))) {
+                            type = 'homework';
+                        } else if (examKeywords.some(kw => lowerLine.includes(kw))) {
+                            type = 'important';
+                        } else if (classKeywords.some(kw => lowerLine.includes(kw))) {
+                            type = 'class';
+                        }
+
+                        // Extract title (clean up the line)
+                        let title = line.replace(dateStr, '').trim();
+                        title = title.replace(/^[-•*:]\s*/, '').trim();
+                        
+                        if (title.length > 0 && title.length < 200) {
+                            parsed.push({
+                                type,
+                                title: title.slice(0, 100),
+                                date: foundDate,
+                                description: '',
+                                startTime: '',
+                                endTime: '',
+                                location: '',
+                                recurrence: 'none',
+                                daysOfWeek: []
+                            });
+                        }
+                    }
+                });
+
+                return parsed;
+            };
+
+            const parseDate = (dateStr) => {
+                // Handle various date formats
+                let date = new Date(dateStr);
+                
+                if (isNaN(date.getTime())) {
+                    // Try parsing MM/DD/YYYY or MM-DD-YYYY
+                    const parts = dateStr.split(/[\/\-]/);
+                    if (parts.length === 3) {
+                        const month = parseInt(parts[0]) - 1;
+                        const day = parseInt(parts[1]);
+                        let year = parseInt(parts[2]);
+                        if (year < 100) year += 2000;
+                        date = new Date(year, month, day);
+                    }
+                }
+
+                if (!isNaN(date.getTime())) {
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                }
+                
+                return '';
+            };
+
+            const handleFileUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const text = await file.text();
+                setSyllabusText(text);
+                const parsed = parseSyllabus(text);
+                setExtractedEvents(parsed);
+            };
+
+            const handleTextPaste = () => {
+                const parsed = parseSyllabus(syllabusText);
+                setExtractedEvents(parsed);
+            };
+
+            const addExtractedEvent = (event) => {
+                setEvents(prev => [...prev, { ...event, id: Date.now() + Math.random() }]);
+                setExtractedEvents(prev => prev.filter(e => e !== event));
+            };
+
+            const addAllExtractedEvents = () => {
+                const newEvents = extractedEvents.map(e => ({ ...e, id: Date.now() + Math.random() }));
+                setEvents(prev => [...prev, ...newEvents]);
+                setExtractedEvents([]);
+                setShowImport(false);
             };
 
             const handleInputChange = (e) => {
@@ -204,7 +346,7 @@
 
             const sortedEvents = [...events].sort((a, b) => new Date(a.date) - new Date(b.date));
 
-                return (
+            return (
                 <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-3 sm:p-6">
                     <div className="max-w-4xl mx-auto">
                         <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-8 mb-4 sm:mb-6">
@@ -215,7 +357,20 @@
                                 </div>
                                 <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                                     <button
-                                        onClick={() => setShowForm(!showForm)}
+                                        onClick={() => {
+                                            setShowImport(!showImport);
+                                            setShowForm(false);
+                                        }}
+                                        className="flex items-center justify-center gap-2 bg-purple-600 text-white px-4 py-3 rounded-lg hover:bg-purple-700 transition text-base font-medium"
+                                    >
+                                        <Upload className="w-5 h-5" />
+                                        Import Syllabus
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setShowForm(!showForm);
+                                            setShowImport(false);
+                                        }}
                                         className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-3 rounded-lg hover:bg-indigo-700 transition text-base font-medium"
                                     >
                                         <Plus className="w-5 h-5" />
@@ -232,6 +387,101 @@
                                     )}
                                 </div>
                             </div>
+
+                            {showImport && (
+                                <div className="bg-purple-50 rounded-lg p-4 md:p-6 mb-6 border-2 border-purple-200">
+                                    <h2 className="text-lg md:text-xl font-semibold mb-4 text-gray-800">Import Syllabus</h2>
+                                    
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Upload Syllabus File (.txt, .doc, .pdf)
+                                            </label>
+                                            <input
+                                                type="file"
+                                                accept=".txt,.doc,.docx,.pdf"
+                                                onChange={handleFileUpload}
+                                                className="w-full px-3 py-3 text-base md:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                            />
+                                        </div>
+
+                                        <div className="text-center text-sm text-gray-500">OR</div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Paste Syllabus Text
+                                            </label>
+                                            <textarea
+                                                value={syllabusText}
+                                                onChange={(e) => setSyllabusText(e.target.value)}
+                                                placeholder="Paste your syllabus text here. Include dates like 'Sept 15, 2024' or '9/15/2024' along with event descriptions..."
+                                                rows="6"
+                                                className="w-full px-3 py-3 text-base md:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+                                            />
+                                        </div>
+
+                                        <button
+                                            onClick={handleTextPaste}
+                                            className="w-full bg-purple-600 text-white px-4 py-3 rounded-lg hover:bg-purple-700 transition font-medium"
+                                        >
+                                            Extract Events from Text
+                                        </button>
+
+                                        {extractedEvents.length > 0 && (
+                                            <div className="mt-6">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <h3 className="font-semibold text-gray-800">Found {extractedEvents.length} Events</h3>
+                                                    <button
+                                                        onClick={addAllExtractedEvents}
+                                                        className="text-sm bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+                                                    >
+                                                        Add All
+                                                    </button>
+                                                </div>
+                                                <div className="space-y-2 max-h-96 overflow-y-auto">
+                                                    {extractedEvents.map((event, idx) => {
+                                                        const EventIcon = eventTypes[event.type].icon;
+                                                        return (
+                                                            <div
+                                                                key={idx}
+                                                                className="flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-200"
+                                                            >
+                                                                <div className={`${eventTypes[event.type].color} p-2 rounded-lg flex-shrink-0`}>
+                                                                    <EventIcon className="w-4 h-4 text-white" />
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <h4 className="font-medium text-sm text-gray-800">{event.title}</h4>
+                                                                    <p className="text-xs text-gray-600">
+                                                                        {new Date(event.date).toLocaleDateString('en-US', { 
+                                                                            weekday: 'short', 
+                                                                            month: 'short', 
+                                                                            day: 'numeric',
+                                                                            year: 'numeric'
+                                                                        })}
+                                                                    </p>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => addExtractedEvent(event)}
+                                                                    className="text-sm bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 flex-shrink-0"
+                                                                >
+                                                                    Add
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <button
+                                            onClick={() => setShowImport(false)}
+                                            className="w-full px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-base"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
                             {showForm && (
                                 <div className="bg-gray-50 rounded-lg p-4 md:p-6 mb-6 border-2 border-indigo-200">
@@ -378,7 +628,7 @@
                             {events.length === 0 ? (
                                 <div className="text-center py-12">
                                     <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                                    <p className="text-gray-500 text-lg">No events yet. Click "Add Event" to get started!</p>
+                                    <p className="text-gray-500 text-lg">No events yet. Import a syllabus or click "Add Event" to get started!</p>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
@@ -435,7 +685,7 @@
                             )}
                         </div>
 
-                                        <div className="bg-blue-50 rounded-lg p-3 sm:p-4 border border-blue-200">
+                        <div className="bg-blue-50 rounded-lg p-3 sm:p-4 border border-blue-200">
                             <p className="text-xs sm:text-sm text-blue-800">
                                 <strong>💡 Tip:</strong> After exporting, open the .ics file with Outlook, Apple Calendar, or Google Calendar to import all your events.
                             </p>
@@ -449,3 +699,4 @@
     </script>
 </body>
 </html>
+                
