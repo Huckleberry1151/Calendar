@@ -95,6 +95,8 @@
             const [showImport, setShowImport] = useState(false);
             const [extractedEvents, setExtractedEvents] = useState([]);
             const [syllabusText, setSyllabusText] = useState('');
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [errorMessage, setErrorMessage] = useState('');
             const [formData, setFormData] = useState({
                 type: 'class',
                 title: '',
@@ -314,10 +316,57 @@
                 const file = e.target.files[0];
                 if (!file) return;
 
-                const text = await file.text();
-                setSyllabusText(text);
-                const parsed = parseSyllabus(text);
-                setExtractedEvents(parsed);
+                setIsProcessing(true);
+                setErrorMessage('');
+                let text = '';
+
+                try {
+                    if (file.type === 'application/pdf') {
+                        // Handle PDF files
+                        console.log('Processing PDF file...');
+                        const arrayBuffer = await file.arrayBuffer();
+                        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                        
+                        console.log(`PDF has ${pdf.numPages} pages`);
+                        
+                        // Extract text from all pages
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const textContent = await page.getTextContent();
+                            const pageText = textContent.items.map(item => item.str).join(' ');
+                            text += pageText + '\n';
+                        }
+                        
+                        console.log('Extracted text length:', text.length);
+                    } else {
+                        // Handle text files
+                        text = await file.text();
+                        console.log('Text file loaded, length:', text.length);
+                    }
+
+                    if (text.trim().length === 0) {
+                        setErrorMessage('No text could be extracted from the file. Please try a different file or paste the text manually.');
+                        setIsProcessing(false);
+                        return;
+                    }
+
+                    setSyllabusText(text);
+                    const parsed = parseSyllabus(text);
+                    console.log('Parsed events:', parsed);
+                    
+                    if (parsed.length === 0) {
+                        setErrorMessage('No dates found in the file. Make sure your syllabus contains dates in formats like "08/25/2025" or "Sept 15, 2024".');
+                    } else {
+                        setErrorMessage('');
+                    }
+                    
+                    setExtractedEvents(parsed);
+                } catch (error) {
+                    console.error('Error processing file:', error);
+                    setErrorMessage('Error reading file: ' + error.message + '. Please try pasting the text manually instead.');
+                } finally {
+                    setIsProcessing(false);
+                }
             };
 
             const handleTextPaste = () => {
@@ -500,39 +549,65 @@
                                     <h2 className="text-lg md:text-xl font-semibold mb-4 text-gray-800">Import Syllabus</h2>
                                     
                                     <div className="space-y-4">
+                                        {errorMessage && (
+                                            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
+                                                ⚠️ {errorMessage}
+                                            </div>
+                                        )}
+                                        
+                                        {isProcessing && (
+                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                                                🔄 Processing file...
+                                            </div>
+                                        )}
+
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                Upload Syllabus File (.txt, .doc, .pdf)
+                                                📄 Upload Syllabus (PDF, TXT, DOC)
                                             </label>
                                             <input
                                                 type="file"
                                                 accept=".txt,.doc,.docx,.pdf"
                                                 onChange={handleFileUpload}
-                                                className="w-full px-3 py-3 text-base md:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                                disabled={isProcessing}
+                                                className="w-full px-3 py-3 text-base md:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 disabled:opacity-50"
                                             />
+                                            <p className="text-xs text-gray-500 mt-1">Works best with table-formatted syllabi (like the example above)</p>
                                         </div>
 
                                         <div className="text-center text-sm text-gray-500">OR</div>
 
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                Paste Syllabus Text
+                                                ✏️ Paste Syllabus Text
                                             </label>
                                             <textarea
                                                 value={syllabusText}
                                                 onChange={(e) => setSyllabusText(e.target.value)}
-                                                placeholder="Paste your syllabus text here. Include dates like 'Sept 15, 2024' or '9/15/2024' along with event descriptions..."
-                                                rows="6"
-                                                className="w-full px-3 py-3 text-base md:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+                                                placeholder="Example table format:&#10;Session | Day | Topic | Format&#10;1 | 08/25/2025 | Introduction | In-person&#10;2 | 09/08/2025 | Fundamentals (1) | Zoom&#10;&#10;Or simple list:&#10;Sept 15, 2024 - Chapter 1 Lecture&#10;9/22/2024 - Homework 1 Due"
+                                                rows="8"
+                                                className="w-full px-3 py-3 text-base md:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-xs"
                                             />
                                         </div>
 
                                         <button
                                             onClick={handleTextPaste}
-                                            className="w-full bg-purple-600 text-white px-4 py-3 rounded-lg hover:bg-purple-700 transition font-medium"
+                                            disabled={isProcessing || !syllabusText.trim()}
+                                            className="w-full bg-purple-600 text-white px-4 py-3 rounded-lg hover:bg-purple-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
-                                            Extract Events from Text
+                                            {isProcessing ? '🔄 Processing...' : 'Extract Events from Text'}
                                         </button>
+
+                                        {syllabusText && (
+                                            <div className="bg-gray-100 rounded-lg p-3">
+                                                <p className="text-xs text-gray-600 mb-2">
+                                                    <strong>Extracted Text Preview:</strong>
+                                                </p>
+                                                <div className="bg-white p-2 rounded text-xs font-mono max-h-32 overflow-y-auto">
+                                                    {syllabusText.slice(0, 500)}...
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {extractedEvents.length > 0 && (
                                             <div className="mt-6">
